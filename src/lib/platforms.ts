@@ -11,6 +11,7 @@ export const platformPresets: PlatformInfo[] = [
   { id: "apple", name: "Apple", color: "#000000", url: "https://appleid.apple.com" },
   { id: "microsoft", name: "Microsoft", color: "#00A4EF", url: "https://login.microsoftonline.com" },
   { id: "aws", name: "AWS", color: "#FF9900", url: "https://console.aws.amazon.com" },
+  { id: "cloudflare", name: "Cloudflare", color: "#F38020", url: "https://dash.cloudflare.com/login" },
   { id: "twitter", name: "Twitter/X", color: "#000000", url: "https://x.com" },
   { id: "facebook", name: "Facebook", color: "#0866FF", url: "https://www.facebook.com" },
   { id: "instagram", name: "Instagram", color: "#E4405F", url: "https://www.instagram.com" },
