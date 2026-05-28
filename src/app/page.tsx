@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { Credential, decryptData, encryptData } from "@/lib/crypto";
 import { store } from "@/lib/store";
-import { getPlatformColor } from "@/lib/platforms";
+import { getPlatformColor, getPlatformPreset, platformPresets } from "@/lib/platforms";
 
 type View = "unlock" | "list" | "detail" | "edit" | "add";
 
@@ -373,9 +373,21 @@ function EditForm({ credential, onSave, onCancel }: {
     accessCount: 0,
     updatedAt: Date.now(),
   });
+  const [showPlatformPicker, setShowPlatformPicker] = useState(false);
 
   const update = (field: keyof Credential, value: string | number) => {
     setForm({ ...form, [field]: value, updatedAt: Date.now() });
+  };
+
+  const selectPlatform = (preset: typeof platformPresets[number]) => {
+    setForm({
+      ...form,
+      platform: preset.name,
+      platformIcon: preset.id,
+      websiteUrl: form.websiteUrl || preset.url,
+      updatedAt: Date.now(),
+    });
+    setShowPlatformPicker(false);
   };
 
   return (
@@ -386,6 +398,49 @@ function EditForm({ credential, onSave, onCancel }: {
       </div>
 
       <div className="bg-[var(--surface)] rounded-2xl p-5 border border-[var(--outline)] space-y-4">
+        {/* 平台选择 */}
+        <div>
+          <label className="text-sm font-medium block mb-2">选择平台</label>
+          {form.platformIcon && (
+            <div className="flex items-center gap-2 mb-2 p-2 rounded-lg bg-[var(--surface-variant)]">
+              <PlatformIcon iconId={form.platformIcon} name={form.platform} size={32} />
+              <span className="font-medium text-sm">{form.platform}</span>
+              <button onClick={() => { update("platformIcon", ""); update("platform", ""); }} className="ml-auto text-xs px-2 py-1 rounded bg-[var(--outline)] hover:opacity-80">
+                清除
+              </button>
+            </div>
+          )}
+          <button
+            onClick={() => setShowPlatformPicker(!showPlatformPicker)}
+            className="w-full py-2 text-sm rounded-lg border border-dashed border-[var(--outline)] hover:border-[var(--primary)] hover:text-[var(--primary)] transition"
+          >
+            {showPlatformPicker ? "收起" : "从预设中选择平台..."}
+          </button>
+          {showPlatformPicker && (
+            <div className="mt-2 grid grid-cols-4 sm:grid-cols-6 gap-2 max-h-64 overflow-y-auto p-2 rounded-lg border border-[var(--outline)] bg-[var(--surface-variant)]">
+              {platformPresets.map((p) => {
+                const Icon = p.icon;
+                return (
+                  <button
+                    key={p.id}
+                    onClick={() => selectPlatform(p)}
+                    className="flex flex-col items-center gap-1 p-2 rounded-lg hover:bg-[var(--surface)] transition"
+                    title={p.name}
+                  >
+                    <div
+                      className="w-9 h-9 rounded-lg flex items-center justify-center"
+                      style={{ backgroundColor: p.color + "14" }}
+                    >
+                      {Icon ? <Icon size={18} color={p.color} /> : <span style={{ color: p.color, fontWeight: 700, fontSize: 14 }}>{p.name.charAt(0)}</span>}
+                    </div>
+                    <span className="text-[10px] leading-tight text-center truncate w-full">{p.name}</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
         <FormField label="平台名称" value={form.platform} onChange={(v) => update("platform", v)} required />
         <FormField label="网站 URL" value={form.websiteUrl} onChange={(v) => update("websiteUrl", v)} placeholder="https://example.com" />
         <FormField label="用户名 / 邮箱" value={form.username} onChange={(v) => update("username", v)} required />
@@ -422,13 +477,21 @@ function EditForm({ credential, onSave, onCancel }: {
 
 function PlatformIcon({ iconId, name, size }: { iconId: string; name: string; size: number }) {
   const color = getPlatformColor(iconId, name);
+  const preset = getPlatformPreset(iconId, name);
+  const IconComponent = preset?.icon;
   const letter = name.charAt(0).toUpperCase();
+  const iconSize = Math.round(size * 0.5);
+
   return (
     <div
-      className="rounded-xl flex items-center justify-center text-white font-bold shrink-0"
-      style={{ width: size, height: size, backgroundColor: color, fontSize: size * 0.4 }}
+      className="rounded-xl flex items-center justify-center shrink-0"
+      style={{ width: size, height: size, backgroundColor: color + "14" }}
     >
-      {letter}
+      {IconComponent ? (
+        <IconComponent size={iconSize} color={color} />
+      ) : (
+        <span style={{ color, fontSize: size * 0.4, fontWeight: 700 }}>{letter}</span>
+      )}
     </div>
   );
 }
