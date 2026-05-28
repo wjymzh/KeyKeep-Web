@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "KeyKeep Web",
+  title: "KeyKeep",
   description: "安全密码管理 - Web 端",
   icons: { icon: "/favicon.png" },
 };

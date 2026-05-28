@@ -146,7 +146,7 @@ function UnlockScreen({ passphrase, setPassphrase, error, onImport, darkMode, se
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
           <img src="/logo.png" alt="KeyKeep" className="w-16 h-16 mx-auto mb-4" />
-          <h1 className="text-2xl font-bold">KeyKeep Web</h1>
+          <h1 className="text-2xl font-bold">KeyKeep</h1>
           <p className="text-[var(--on-surface-variant)] mt-2">导入加密备份文件开始使用</p>
         </div>
 
