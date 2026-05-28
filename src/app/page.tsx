@@ -116,6 +116,7 @@ export default function Home() {
       {view === "edit" && selected && (
         <EditForm
           credential={selected}
+          allCredentials={credentials}
           onSave={(c) => { store.update(c); setView("detail"); }}
           onCancel={() => setView("detail")}
         />
@@ -123,6 +124,7 @@ export default function Home() {
 
       {view === "add" && (
         <EditForm
+          allCredentials={credentials}
           onSave={(c) => { store.add(c); setView("list"); }}
           onCancel={() => setView("list")}
         />
@@ -327,7 +329,12 @@ function DetailView({ credential, allCredentials, onBack, onEdit, onDelete, onNa
         )}
 
         {credential.verifyMethod !== "None" && credential.verifyMethod && (
-          <InfoRow label="二次验证" value={credential.verifyMethod} />
+          <div className="space-y-2">
+            <InfoRow label="验证方式" value={credential.verifyMethod} />
+            {credential.verifyMethod === "2FA" && credential.otpSecret && (
+              <CopyRow label="2FA 密钥" value={credential.otpSecret} onCopy={() => copy("2FA", credential.otpSecret)} copied={copied === "2FA"} />
+            )}
+          </div>
         )}
 
         {credential.tags && (
@@ -352,8 +359,34 @@ function DetailView({ credential, allCredentials, onBack, onEdit, onDelete, onNa
   );
 }
 
-function EditForm({ credential, onSave, onCancel }: {
+const PRESET_TAGS = ["工作", "个人", "金融", "社交", "开发", "游戏", "购物"];
+
+function generatePassword(length = 20): string {
+  const upper = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+  const lower = "abcdefghijklmnopqrstuvwxyz";
+  const digits = "0123456789";
+  const symbols = "!@#$%^&*_+-=";
+  const all = upper + lower + digits + symbols;
+  const arr = new Uint8Array(length);
+  globalThis.crypto.getRandomValues(arr);
+  const must = [
+    upper[arr[0] % upper.length],
+    lower[arr[1] % lower.length],
+    digits[arr[2] % digits.length],
+    symbols[arr[3] % symbols.length],
+  ];
+  const rest = Array.from(arr.slice(4), (b) => all[b % all.length]);
+  const combined = [...must, ...rest];
+  for (let i = combined.length - 1; i > 0; i--) {
+    const j = arr[i % arr.length] % (i + 1);
+    [combined[i], combined[j]] = [combined[j], combined[i]];
+  }
+  return combined.join("");
+}
+
+function EditForm({ credential, allCredentials, onSave, onCancel }: {
   credential?: Credential;
+  allCredentials: Credential[];
   onSave: (c: Credential) => void;
   onCancel: () => void;
 }) {
@@ -374,21 +407,32 @@ function EditForm({ credential, onSave, onCancel }: {
     updatedAt: Date.now(),
   });
   const [showPlatformPicker, setShowPlatformPicker] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showAccountPicker, setShowAccountPicker] = useState(false);
 
   const update = (field: keyof Credential, value: string | number) => {
-    setForm({ ...form, [field]: value, updatedAt: Date.now() });
+    setForm((prev) => ({ ...prev, [field]: value, updatedAt: Date.now() }));
   };
 
   const selectPlatform = (preset: typeof platformPresets[number]) => {
-    setForm({
-      ...form,
+    setForm((prev) => ({
+      ...prev,
       platform: preset.name,
       platformIcon: preset.id,
-      websiteUrl: form.websiteUrl || preset.url,
+      websiteUrl: prev.websiteUrl || preset.url,
       updatedAt: Date.now(),
-    });
+    }));
     setShowPlatformPicker(false);
   };
+
+  const selectedTags = form.tags ? form.tags.split(",").filter(Boolean) : [];
+  const toggleTag = (tag: string) => {
+    const next = selectedTags.includes(tag) ? selectedTags.filter((t) => t !== tag) : [...selectedTags, tag];
+    update("tags", next.join(","));
+  };
+
+  const linkedAccount = form.linkedAccountId ? allCredentials.find((c) => c.id === form.linkedAccountId) : null;
+  const linkableAccounts = allCredentials.filter((c) => c.id !== form.id && c.loginMethod !== "OAuth");
 
   return (
     <div>
@@ -397,77 +441,183 @@ function EditForm({ credential, onSave, onCancel }: {
         <h2 className="text-lg font-bold">{credential ? "编辑" : "添加"}账号</h2>
       </div>
 
-      <div className="bg-[var(--surface)] rounded-2xl p-5 border border-[var(--outline)] space-y-4">
-        {/* 平台选择 */}
-        <div>
-          <label className="text-sm font-medium block mb-2">选择平台</label>
-          {form.platformIcon && (
-            <div className="flex items-center gap-2 mb-2 p-2 rounded-lg bg-[var(--surface-variant)]">
-              <PlatformIcon iconId={form.platformIcon} name={form.platform} size={32} />
-              <span className="font-medium text-sm">{form.platform}</span>
-              <button onClick={() => { update("platformIcon", ""); update("platform", ""); }} className="ml-auto text-xs px-2 py-1 rounded bg-[var(--outline)] hover:opacity-80">
-                清除
-              </button>
-            </div>
-          )}
-          <button
-            onClick={() => setShowPlatformPicker(!showPlatformPicker)}
-            className="w-full py-2 text-sm rounded-lg border border-dashed border-[var(--outline)] hover:border-[var(--primary)] hover:text-[var(--primary)] transition"
-          >
-            {showPlatformPicker ? "收起" : "从预设中选择平台..."}
-          </button>
-          {showPlatformPicker && (
-            <div className="mt-2 grid grid-cols-4 sm:grid-cols-6 gap-2 max-h-64 overflow-y-auto p-2 rounded-lg border border-[var(--outline)] bg-[var(--surface-variant)]">
-              {platformPresets.map((p) => {
-                const Icon = p.icon;
-                return (
-                  <button
-                    key={p.id}
-                    onClick={() => selectPlatform(p)}
-                    className="flex flex-col items-center gap-1 p-2 rounded-lg hover:bg-[var(--surface)] transition"
-                    title={p.name}
-                  >
-                    <div
-                      className="w-9 h-9 rounded-lg flex items-center justify-center"
-                      style={{ backgroundColor: p.color + "14" }}
-                    >
-                      {Icon ? <Icon size={18} color={p.color} /> : <span style={{ color: p.color, fontWeight: 700, fontSize: 14 }}>{p.name.charAt(0)}</span>}
+      <div className="space-y-5">
+        {/* 平台信息 */}
+        <div className="bg-[var(--surface)] rounded-2xl p-5 border border-[var(--outline)] space-y-4">
+          <p className="text-xs font-semibold text-[var(--on-surface-variant)] uppercase tracking-wide">平台信息</p>
+          <div>
+            {form.platformIcon && (
+              <div className="flex items-center gap-2 mb-2 p-2 rounded-lg bg-[var(--surface-variant)]">
+                <PlatformIcon iconId={form.platformIcon} name={form.platform} size={32} />
+                <span className="font-medium text-sm">{form.platform}</span>
+                <button onClick={() => { update("platformIcon", ""); update("platform", ""); }} className="ml-auto text-xs px-2 py-1 rounded bg-[var(--outline)] hover:opacity-80">清除</button>
+              </div>
+            )}
+            <button
+              onClick={() => setShowPlatformPicker(!showPlatformPicker)}
+              className="w-full py-2 text-sm rounded-lg border border-dashed border-[var(--outline)] hover:border-[var(--primary)] hover:text-[var(--primary)] transition"
+            >
+              {showPlatformPicker ? "收起" : "从预设中选择平台..."}
+            </button>
+            {showPlatformPicker && (
+              <div className="mt-2 grid grid-cols-4 sm:grid-cols-6 gap-2 max-h-64 overflow-y-auto p-2 rounded-lg border border-[var(--outline)] bg-[var(--surface-variant)]">
+                {platformPresets.map((p) => {
+                  const Icon = p.icon;
+                  return (
+                    <button key={p.id} onClick={() => selectPlatform(p)} className="flex flex-col items-center gap-1 p-2 rounded-lg hover:bg-[var(--surface)] transition" title={p.name}>
+                      <div className="w-9 h-9 rounded-lg flex items-center justify-center" style={{ backgroundColor: p.color + "14" }}>
+                        {Icon ? <Icon size={18} color={p.color} /> : <span style={{ color: p.color, fontWeight: 700, fontSize: 14 }}>{p.name.charAt(0)}</span>}
+                      </div>
+                      <span className="text-[10px] leading-tight text-center truncate w-full">{p.name}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+          <FormField label="平台名称" value={form.platform} onChange={(v) => update("platform", v)} required />
+          <FormField label="网站 URL" value={form.websiteUrl} onChange={(v) => update("websiteUrl", v)} placeholder="https://example.com" />
+        </div>
+
+        {/* 登录信息 */}
+        <div className="bg-[var(--surface)] rounded-2xl p-5 border border-[var(--outline)] space-y-4">
+          <p className="text-xs font-semibold text-[var(--on-surface-variant)] uppercase tracking-wide">登录信息</p>
+          <div>
+            <label className="text-sm font-medium block mb-1">登录方式</label>
+            <select value={form.loginMethod} onChange={(e) => update("loginMethod", e.target.value)} className="w-full px-3 py-2 rounded-lg bg-[var(--surface-variant)] border border-[var(--outline)]">
+              <option>Password</option>
+              <option>OAuth</option>
+              <option>PrivateKey</option>
+              <option>SMS</option>
+              <option>Other</option>
+            </select>
+          </div>
+
+          {form.loginMethod === "OAuth" ? (
+            <>
+              <div>
+                <label className="text-sm font-medium block mb-1">绑定账号</label>
+                <p className="text-xs text-[var(--on-surface-variant)] mb-2">选择通过 OAuth 登录所使用的已有账号</p>
+                {linkedAccount ? (
+                  <div className="flex items-center gap-2 p-3 rounded-lg bg-[var(--surface-variant)]">
+                    <PlatformIcon iconId={linkedAccount.platformIcon} name={linkedAccount.platform} size={28} />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium truncate">{linkedAccount.platform}</p>
+                      <p className="text-xs text-[var(--on-surface-variant)] truncate">{linkedAccount.username}</p>
                     </div>
-                    <span className="text-[10px] leading-tight text-center truncate w-full">{p.name}</span>
+                    <button onClick={() => update("linkedAccountId", "")} className="text-xs px-2 py-1 rounded bg-[var(--outline)]">解除</button>
+                  </div>
+                ) : (
+                  <button onClick={() => setShowAccountPicker(!showAccountPicker)} className="w-full py-2.5 text-sm rounded-lg border border-dashed border-[var(--outline)] hover:border-[var(--primary)] transition">
+                    点击选择绑定账号
                   </button>
-                );
-              })}
-            </div>
+                )}
+                {showAccountPicker && !linkedAccount && (
+                  <div className="mt-2 max-h-48 overflow-y-auto rounded-lg border border-[var(--outline)] bg-[var(--surface-variant)]">
+                    {linkableAccounts.length === 0 ? (
+                      <p className="text-center py-6 text-sm text-[var(--on-surface-variant)]">暂无可绑定的账号</p>
+                    ) : linkableAccounts.map((acc) => (
+                      <button key={acc.id} onClick={() => { update("linkedAccountId", acc.id); setShowAccountPicker(false); }} className="w-full flex items-center gap-2 p-3 hover:bg-[var(--surface)] transition text-left">
+                        <PlatformIcon iconId={acc.platformIcon} name={acc.platform} size={28} />
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium truncate">{acc.platform}</p>
+                          <p className="text-xs text-[var(--on-surface-variant)] truncate">{acc.username}</p>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <FormField label="关联标识（选填）" value={form.username} onChange={(v) => update("username", v)} placeholder="OAuth 显示的邮箱或用户名" />
+            </>
+          ) : (
+            <>
+              <FormField label="用户名 / 邮箱" value={form.username} onChange={(v) => update("username", v)} required />
+              <div>
+                <label className="text-sm font-medium block mb-1">密码</label>
+                <div className="flex gap-2">
+                  <div className="relative flex-1">
+                    <input
+                      type={showPassword ? "text" : "password"}
+                      value={form.password}
+                      onChange={(e) => update("password", e.target.value)}
+                      placeholder="输入密码"
+                      className="w-full px-3 py-2 pr-10 rounded-lg bg-[var(--surface-variant)] border border-[var(--outline)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
+                    />
+                    <button onClick={() => setShowPassword(!showPassword)} className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-[var(--on-surface-variant)]">
+                      {showPassword ? "隐藏" : "显示"}
+                    </button>
+                  </div>
+                </div>
+                <button
+                  onClick={() => update("password", generatePassword())}
+                  className="mt-2 inline-flex items-center gap-1 px-3 py-1.5 text-xs rounded-lg bg-[var(--primary)] bg-opacity-10 text-[var(--primary)] hover:opacity-80 transition"
+                >
+                  ✦ 生成强密码
+                </button>
+              </div>
+            </>
           )}
         </div>
 
-        <FormField label="平台名称" value={form.platform} onChange={(v) => update("platform", v)} required />
-        <FormField label="网站 URL" value={form.websiteUrl} onChange={(v) => update("websiteUrl", v)} placeholder="https://example.com" />
-        <FormField label="用户名 / 邮箱" value={form.username} onChange={(v) => update("username", v)} required />
-        <FormField label="密码" value={form.password} onChange={(v) => update("password", v)} type="password" />
-
-        <div>
-          <label className="text-sm font-medium block mb-1">登录方式</label>
-          <select value={form.loginMethod} onChange={(e) => update("loginMethod", e.target.value)} className="w-full px-3 py-2 rounded-lg bg-[var(--surface-variant)] border border-[var(--outline)]">
-            <option>Password</option>
-            <option>OAuth</option>
-            <option>PrivateKey</option>
-            <option>SMS</option>
-            <option>Other</option>
-          </select>
+        {/* 标签 */}
+        <div className="bg-[var(--surface)] rounded-2xl p-5 border border-[var(--outline)] space-y-3">
+          <p className="text-xs font-semibold text-[var(--on-surface-variant)] uppercase tracking-wide">标签</p>
+          <p className="text-xs text-[var(--on-surface-variant)]">选择标签（可多选）</p>
+          <div className="flex flex-wrap gap-2">
+            {PRESET_TAGS.map((tag) => (
+              <button
+                key={tag}
+                onClick={() => toggleTag(tag)}
+                className={`px-3 py-1.5 text-sm rounded-full border transition ${selectedTags.includes(tag) ? "bg-[var(--primary)] text-white border-[var(--primary)]" : "border-[var(--outline)] hover:border-[var(--primary)]"}`}
+              >
+                {tag}
+              </button>
+            ))}
+          </div>
         </div>
 
-        <FormField label="标签（逗号分隔）" value={form.tags} onChange={(v) => update("tags", v)} placeholder="工作,个人" />
-        <FormField label="备注" value={form.note} onChange={(v) => update("note", v)} multiline />
+        {/* 安全设置 */}
+        <div className="bg-[var(--surface)] rounded-2xl p-5 border border-[var(--outline)] space-y-4">
+          <p className="text-xs font-semibold text-[var(--on-surface-variant)] uppercase tracking-wide">安全设置</p>
+          <div>
+            <label className="text-sm font-medium block mb-1">验证方式</label>
+            <select value={form.verifyMethod} onChange={(e) => update("verifyMethod", e.target.value)} className="w-full px-3 py-2 rounded-lg bg-[var(--surface-variant)] border border-[var(--outline)]">
+              <option value="None">无</option>
+              <option value="2FA">2FA（TOTP）</option>
+              <option value="SMS">短信验证</option>
+              <option value="Email">邮箱验证</option>
+              <option value="HardwareKey">硬件密钥</option>
+            </select>
+          </div>
+          {form.verifyMethod === "2FA" && (
+            <FormField label="2FA 密钥" value={form.otpSecret} onChange={(v) => update("otpSecret", v)} placeholder="TOTP 密钥或备份码" />
+          )}
+        </div>
 
-        <div className="flex gap-3 pt-2">
-          <button onClick={() => onSave(form)} disabled={!form.platform || !form.username} className="flex-1 py-3 rounded-xl bg-[var(--primary)] text-white font-medium disabled:opacity-50">
-            保存
+        {/* 备注 */}
+        <div className="bg-[var(--surface)] rounded-2xl p-5 border border-[var(--outline)] space-y-3">
+          <p className="text-xs font-semibold text-[var(--on-surface-variant)] uppercase tracking-wide">备注</p>
+          <FormField label="" value={form.note} onChange={(v) => update("note", v)} multiline placeholder="添加备注或恢复码..." />
+        </div>
+
+        {/* 操作按钮 */}
+        <div className="flex gap-3">
+          <button
+            onClick={() => onSave(form)}
+            disabled={!form.platform || (!form.username && form.loginMethod !== "OAuth")}
+            className="flex-1 py-3 rounded-xl bg-[var(--primary)] text-white font-medium disabled:opacity-50 hover:opacity-90 transition"
+          >
+            {credential ? "保存修改" : "保存"}
           </button>
-          <button onClick={onCancel} className="flex-1 py-3 rounded-xl border border-[var(--outline)]">
+          <button onClick={onCancel} className="flex-1 py-3 rounded-xl border border-[var(--outline)] hover:bg-[var(--surface-variant)] transition">
             取消
           </button>
         </div>
+
+        <p className="text-center text-xs text-[var(--on-surface-variant)] opacity-50 pb-4">
+          🛡 所有数据均使用 AES-256 加密存储
+        </p>
       </div>
     </div>
   );
