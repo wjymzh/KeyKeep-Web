@@ -12,7 +12,7 @@ import {
   decryptVault,
 } from './key-derivation';
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8788';
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'https://keykeep-api.octopus-labs.top';
 
 type SyncState = {
   loggedIn: boolean;
