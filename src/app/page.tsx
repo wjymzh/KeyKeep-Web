@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { Credential, decryptData, encryptData } from "@/lib/crypto";
 import { store } from "@/lib/store";
 import { getPlatformColor, getPlatformPreset, platformPresets } from "@/lib/platforms";
+import { syncClient } from "@/lib/sync";
 
 type View = "unlock" | "list" | "detail" | "edit" | "add";
 
@@ -16,6 +17,9 @@ export default function Home() {
   const [error, setError] = useState("");
   const [darkMode, setDarkMode] = useState(false);
   const [showExportModal, setShowExportModal] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const [syncMsg, setSyncMsg] = useState("");
+  const [showSyncPanel, setShowSyncPanel] = useState(false);
 
   useEffect(() => {
     const unsub = store.subscribe(() => {
@@ -41,6 +45,35 @@ export default function Home() {
     }
   }, []);
 
+  const handleCloudLogin = useCallback(async () => {
+    setView("list");
+    setError("");
+  }, []);
+
+  const handleSync = useCallback(async (action: "push" | "pull") => {
+    setSyncing(true);
+    setSyncMsg("");
+    try {
+      if (action === "push") {
+        await syncClient.pushVault(store.getAll());
+        setSyncMsg("已上传到云端");
+      } else {
+        const data = await syncClient.pullVault();
+        if (data) {
+          store.setAll(data);
+          setSyncMsg(`已从云端同步 ${data.length} 条记录`);
+        } else {
+          setSyncMsg("云端暂无数据");
+        }
+      }
+    } catch (e: unknown) {
+      setSyncMsg(e instanceof Error ? e.message : "同步失败");
+    } finally {
+      setSyncing(false);
+      setTimeout(() => setSyncMsg(""), 4000);
+    }
+  }, []);
+
   const filtered = searchQuery ? store.search(searchQuery) : credentials;
 
   if (view === "unlock") {
@@ -50,6 +83,7 @@ export default function Home() {
         setPassphrase={setPassphrase}
         error={error}
         onImport={handleFileImport}
+        onCloudLogin={handleCloudLogin}
         darkMode={darkMode}
         setDarkMode={setDarkMode}
       />
@@ -70,6 +104,25 @@ export default function Home() {
           <h1 className="text-lg font-semibold tracking-tight">KeyKeep</h1>
         </div>
         <div className="flex items-center gap-1.5">
+          {syncClient.isLoggedIn() && (
+            <div className="relative">
+              <button onClick={() => setShowSyncPanel(!showSyncPanel)} className="p-2 rounded-lg text-[var(--on-surface-variant)] hover:bg-[var(--surface)] hover:text-[var(--on-surface)] transition" title="云同步">
+                <svg className={`w-[18px] h-[18px] ${syncing ? "animate-spin" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.8}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182M20.016 4.353v4.992" />
+                </svg>
+              </button>
+              {showSyncPanel && (
+                <SyncPanel
+                  syncing={syncing}
+                  syncMsg={syncMsg}
+                  onPush={() => handleSync("push")}
+                  onPull={() => handleSync("pull")}
+                  onLogout={async () => { await syncClient.logout(); setShowSyncPanel(false); }}
+                  onClose={() => setShowSyncPanel(false)}
+                />
+              )}
+            </div>
+          )}
           <button onClick={() => setDarkMode(!darkMode)} className="p-2 rounded-lg text-[var(--on-surface-variant)] hover:bg-[var(--surface)] hover:text-[var(--on-surface)] transition" title={darkMode ? "浅色" : "深色"}>
             <svg className="w-[18px] h-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.8}>
               {darkMode
@@ -86,6 +139,12 @@ export default function Home() {
           </button>
         </div>
       </header>
+
+      {syncMsg && (
+        <div className="mb-4 px-4 py-2.5 rounded-lg bg-[var(--primary-subtle)] text-[var(--primary)] text-sm font-medium text-center animate-fade-in">
+          {syncMsg}
+        </div>
+      )}
 
       {view === "list" && (
         <VaultList
@@ -188,18 +247,155 @@ function ExportModal({ onClose }: { onClose: () => void }) {
   );
 }
 
+/* ─── Sync Panel (dropdown) ─── */
+
+function SyncPanel({ syncing, syncMsg, onPush, onPull, onLogout, onClose }: {
+  syncing: boolean;
+  syncMsg: string;
+  onPush: () => void;
+  onPull: () => void;
+  onLogout: () => void;
+  onClose: () => void;
+}) {
+  return (
+    <>
+      <div className="fixed inset-0 z-40" onClick={onClose} />
+      <div className="absolute right-0 top-10 z-50 w-72 bg-[var(--surface-elevated)] rounded-xl shadow-[var(--shadow-lg)] border border-[var(--outline)] p-4 space-y-3">
+        <div className="flex items-center gap-2 pb-2 border-b border-[var(--outline)]">
+          <div className="w-7 h-7 rounded-full bg-[var(--primary-subtle)] flex items-center justify-center">
+            <svg className="w-3.5 h-3.5 text-[var(--primary)]" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 15a4.5 4.5 0 004.5 4.5H18a3.75 3.75 0 001.332-7.257 3 3 0 00-3.758-3.848 5.25 5.25 0 00-10.233 2.33A4.502 4.502 0 002.25 15z" />
+            </svg>
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-xs font-medium truncate">{syncClient.getEmail()}</p>
+            <p className="text-[10px] text-[var(--on-surface-variant)]">已连接</p>
+          </div>
+        </div>
+
+        {syncMsg && (
+          <p className="text-xs text-center text-[var(--primary)] font-medium">{syncMsg}</p>
+        )}
+
+        <div className="grid grid-cols-2 gap-2">
+          <button onClick={onPull} disabled={syncing} className="py-2 text-xs font-medium rounded-lg border border-[var(--outline)] hover:bg-[var(--surface-variant)] disabled:opacity-40 transition">
+            {syncing ? "..." : "从云端拉取"}
+          </button>
+          <button onClick={onPush} disabled={syncing} className="py-2 text-xs font-medium rounded-lg bg-[var(--primary)] text-white hover:bg-[var(--primary-hover)] disabled:opacity-40 transition">
+            {syncing ? "..." : "上传到云端"}
+          </button>
+        </div>
+
+        <div className="pt-2 border-t border-[var(--outline)]">
+          <details className="group">
+            <summary className="text-[10px] text-[var(--on-surface-variant)] cursor-pointer hover:text-[var(--on-surface)]">
+              设备密钥 (Secret Key)
+            </summary>
+            <p className="mt-1.5 text-[10px] font-mono bg-[var(--surface-variant)] p-2 rounded-md break-all select-all leading-relaxed">
+              {syncClient.getSecretKey()}
+            </p>
+            <p className="mt-1 text-[9px] text-[var(--on-surface-variant)]">
+              在新设备登录时需要此密钥，请妥善保管
+            </p>
+          </details>
+        </div>
+
+        <button onClick={onLogout} className="w-full py-1.5 text-xs text-[var(--error)] hover:bg-[var(--error-subtle)] rounded-lg transition">
+          退出登录
+        </button>
+      </div>
+    </>
+  );
+}
+
 /* ─── Unlock Screen ─── */
 
-function UnlockScreen({ passphrase, setPassphrase, error, onImport, darkMode, setDarkMode }: {
+function UnlockScreen({ passphrase, setPassphrase, error, onImport, onCloudLogin, darkMode, setDarkMode }: {
   passphrase: string;
   setPassphrase: (v: string) => void;
   error: string;
   onImport: (file: File, pass: string) => void;
+  onCloudLogin: () => void;
   darkMode: boolean;
   setDarkMode: (v: boolean) => void;
 }) {
   const [file, setFile] = useState<File | null>(null);
   const [dragOver, setDragOver] = useState(false);
+  const [tab, setTab] = useState<"file" | "cloud">("cloud");
+  const [cloudMode, setCloudMode] = useState<"login" | "register">("login");
+  const [email, setEmail] = useState("");
+  const [masterPass, setMasterPass] = useState("");
+  const [confirmPass, setConfirmPass] = useState("");
+  const [secretKey, setSecretKey] = useState("");
+  const [cloudError, setCloudError] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [registeredKey, setRegisteredKey] = useState("");
+
+  const handleCloudSubmit = async () => {
+    setCloudError("");
+    setLoading(true);
+    try {
+      if (cloudMode === "register") {
+        if (masterPass.length < 8) { setCloudError("主密码至少 8 个字符"); setLoading(false); return; }
+        if (masterPass !== confirmPass) { setCloudError("两次密码不一致"); setLoading(false); return; }
+        const { secretKey: sk } = await syncClient.register(email, masterPass);
+        setRegisteredKey(sk);
+      } else {
+        if (!secretKey.trim()) { setCloudError("请输入设备密钥"); setLoading(false); return; }
+        await syncClient.login(email, masterPass, secretKey);
+        const data = await syncClient.pullVault();
+        if (data) store.setAll(data);
+        onCloudLogin();
+      }
+    } catch (e: unknown) {
+      setCloudError(e instanceof Error ? e.message : "操作失败");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (registeredKey) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-4">
+        <div className="w-full max-w-[420px] text-center">
+          <div className="w-14 h-14 rounded-2xl bg-green-500 mx-auto mb-5 flex items-center justify-center shadow-[var(--shadow-md)]">
+            <svg className="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+            </svg>
+          </div>
+          <h2 className="text-xl font-bold mb-2">注册成功</h2>
+          <p className="text-sm text-[var(--on-surface-variant)] mb-6">请保存你的设备密钥，这是在新设备上登录时的必要凭证。</p>
+
+          <div className="bg-[var(--surface)] rounded-2xl p-6 shadow-[var(--shadow-md)] space-y-4">
+            <div>
+              <p className="text-xs font-medium text-[var(--on-surface-variant)] mb-2">设备密钥 (Secret Key)</p>
+              <p className="font-mono text-sm bg-[var(--surface-variant)] p-3 rounded-lg break-all select-all leading-relaxed tracking-wide border border-[var(--outline)]">
+                {registeredKey}
+              </p>
+            </div>
+            <div className="flex items-start gap-2 p-3 rounded-lg bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-300 text-xs">
+              <svg className="w-4 h-4 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
+              </svg>
+              <p>此密钥只显示一次，丢失后无法恢复！建议立即复制保存到安全的地方。</p>
+            </div>
+            <button
+              onClick={() => { navigator.clipboard.writeText(registeredKey); }}
+              className="w-full py-2.5 text-sm font-medium rounded-lg border border-[var(--outline)] hover:bg-[var(--surface-variant)] transition"
+            >
+              复制设备密钥
+            </button>
+            <button
+              onClick={onCloudLogin}
+              className="w-full py-2.5 rounded-lg bg-[var(--primary)] text-white text-sm font-medium hover:bg-[var(--primary-hover)] transition shadow-sm"
+            >
+              进入保险库
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex items-center justify-center p-4">
@@ -211,58 +407,133 @@ function UnlockScreen({ passphrase, setPassphrase, error, onImport, darkMode, se
             </svg>
           </div>
           <h1 className="text-2xl font-bold tracking-tight">KeyKeep</h1>
-          <p className="text-sm text-[var(--on-surface-variant)] mt-1.5">导入加密备份文件开始使用</p>
+          <p className="text-sm text-[var(--on-surface-variant)] mt-1.5">端到端加密的密码管理器</p>
         </div>
 
-        <div className="bg-[var(--surface)] rounded-2xl p-6 shadow-[var(--shadow-md)] space-y-5">
-          <div
-            className={`relative border-2 border-dashed rounded-xl p-6 text-center transition cursor-pointer ${dragOver ? "border-[var(--primary)] bg-[var(--primary-subtle)]" : "border-[var(--outline)] hover:border-[var(--outline-hover)]"}`}
-            onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
-            onDragLeave={() => setDragOver(false)}
-            onDrop={(e) => { e.preventDefault(); setDragOver(false); const f = e.dataTransfer.files[0]; if (f) setFile(f); }}
-            onClick={() => document.getElementById("file-input")?.click()}
-          >
-            <input id="file-input" type="file" accept=".keykeep,.json" onChange={(e) => setFile(e.target.files?.[0] || null)} className="hidden" />
-            <svg className="w-8 h-8 mx-auto mb-2 text-[var(--on-surface-variant)] opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
-            </svg>
-            {file ? (
-              <p className="text-sm font-medium text-[var(--primary)]">{file.name}</p>
-            ) : (
-              <>
-                <p className="text-sm font-medium">点击或拖拽上传 .keykeep 文件</p>
-                <p className="text-xs text-[var(--on-surface-variant)] mt-1">支持 .keykeep 和 .json 格式</p>
-              </>
-            )}
-          </div>
-
-          <div>
-            <label className="text-sm font-medium mb-1.5 block">解密密钥</label>
-            <input
-              type="password"
-              value={passphrase}
-              onChange={(e) => setPassphrase(e.target.value)}
-              placeholder="输入导出时设置的密钥"
-              onKeyDown={(e) => e.key === "Enter" && file && passphrase && onImport(file, passphrase)}
-              className="w-full px-3.5 py-2.5 text-sm rounded-lg bg-[var(--surface-variant)] border border-[var(--outline)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)] focus:border-transparent transition"
-            />
-          </div>
-
-          {error && (
-            <div className="flex items-center gap-2 p-3 rounded-lg bg-[var(--error-subtle)] text-[var(--error)] text-sm">
-              <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" /></svg>
-              {error}
-            </div>
-          )}
-
-          <button
-            onClick={() => file && passphrase && onImport(file, passphrase)}
-            disabled={!file || !passphrase}
-            className="w-full py-2.5 rounded-lg bg-[var(--primary)] text-white text-sm font-medium disabled:opacity-40 hover:bg-[var(--primary-hover)] transition shadow-sm"
-          >
-            解密并导入
+        <div className="flex rounded-lg bg-[var(--surface-variant)] p-1 mb-5">
+          <button onClick={() => setTab("cloud")} className={`flex-1 py-2 text-xs font-medium rounded-md transition ${tab === "cloud" ? "bg-[var(--surface)] shadow-sm text-[var(--on-surface)]" : "text-[var(--on-surface-variant)]"}`}>
+            云同步登录
+          </button>
+          <button onClick={() => setTab("file")} className={`flex-1 py-2 text-xs font-medium rounded-md transition ${tab === "file" ? "bg-[var(--surface)] shadow-sm text-[var(--on-surface)]" : "text-[var(--on-surface-variant)]"}`}>
+            文件导入
           </button>
         </div>
+
+        {tab === "cloud" ? (
+          <div className="bg-[var(--surface)] rounded-2xl p-6 shadow-[var(--shadow-md)] space-y-4">
+            <div className="flex rounded-md bg-[var(--surface-variant)] p-0.5">
+              <button onClick={() => setCloudMode("login")} className={`flex-1 py-1.5 text-xs font-medium rounded transition ${cloudMode === "login" ? "bg-[var(--surface)] shadow-sm" : "text-[var(--on-surface-variant)]"}`}>
+                登录
+              </button>
+              <button onClick={() => setCloudMode("register")} className={`flex-1 py-1.5 text-xs font-medium rounded transition ${cloudMode === "register" ? "bg-[var(--surface)] shadow-sm" : "text-[var(--on-surface-variant)]"}`}>
+                注册
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs font-medium mb-1.5 block">邮箱</label>
+                <input type="email" value={email} onChange={(e) => { setEmail(e.target.value); setCloudError(""); }}
+                  placeholder="your@email.com"
+                  className="w-full px-3.5 py-2.5 text-sm rounded-lg bg-[var(--surface-variant)] border border-[var(--outline)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)] focus:border-transparent transition" />
+              </div>
+              <div>
+                <label className="text-xs font-medium mb-1.5 block">主密码</label>
+                <input type="password" value={masterPass} onChange={(e) => { setMasterPass(e.target.value); setCloudError(""); }}
+                  placeholder={cloudMode === "register" ? "至少 8 个字符" : "输入主密码"}
+                  className="w-full px-3.5 py-2.5 text-sm rounded-lg bg-[var(--surface-variant)] border border-[var(--outline)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)] focus:border-transparent transition" />
+              </div>
+              {cloudMode === "register" && (
+                <div>
+                  <label className="text-xs font-medium mb-1.5 block">确认主密码</label>
+                  <input type="password" value={confirmPass} onChange={(e) => { setConfirmPass(e.target.value); setCloudError(""); }}
+                    placeholder="再次输入主密码"
+                    className="w-full px-3.5 py-2.5 text-sm rounded-lg bg-[var(--surface-variant)] border border-[var(--outline)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)] focus:border-transparent transition" />
+                </div>
+              )}
+              {cloudMode === "login" && (
+                <div>
+                  <label className="text-xs font-medium mb-1.5 block">设备密钥 (Secret Key)</label>
+                  <input type="text" value={secretKey} onChange={(e) => { setSecretKey(e.target.value); setCloudError(""); }}
+                    placeholder="A3-XXXXXX-XXXXXX-XXXXX-XXXXX-XXXXX"
+                    className="w-full px-3.5 py-2.5 text-sm font-mono rounded-lg bg-[var(--surface-variant)] border border-[var(--outline)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)] focus:border-transparent transition" />
+                  <p className="text-[10px] text-[var(--on-surface-variant)] mt-1">注册时生成的设备密钥，用于解密保险库</p>
+                </div>
+              )}
+            </div>
+
+            {cloudError && (
+              <div className="flex items-center gap-2 p-3 rounded-lg bg-[var(--error-subtle)] text-[var(--error)] text-sm">
+                <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" /></svg>
+                {cloudError}
+              </div>
+            )}
+
+            <button
+              onClick={handleCloudSubmit}
+              disabled={!email || !masterPass || loading}
+              className="w-full py-2.5 rounded-lg bg-[var(--primary)] text-white text-sm font-medium disabled:opacity-40 hover:bg-[var(--primary-hover)] transition shadow-sm"
+            >
+              {loading ? "处理中..." : cloudMode === "register" ? "注册" : "登录"}
+            </button>
+
+            {cloudMode === "register" && (
+              <p className="text-[10px] text-center text-[var(--on-surface-variant)] leading-relaxed">
+                注册后将生成一个设备密钥，与主密码共同保护你的数据。<br />服务器零知识架构，永远无法访问你的明文数据。
+              </p>
+            )}
+          </div>
+        ) : (
+          <div className="bg-[var(--surface)] rounded-2xl p-6 shadow-[var(--shadow-md)] space-y-5">
+            <div
+              className={`relative border-2 border-dashed rounded-xl p-6 text-center transition cursor-pointer ${dragOver ? "border-[var(--primary)] bg-[var(--primary-subtle)]" : "border-[var(--outline)] hover:border-[var(--outline-hover)]"}`}
+              onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+              onDragLeave={() => setDragOver(false)}
+              onDrop={(e) => { e.preventDefault(); setDragOver(false); const f = e.dataTransfer.files[0]; if (f) setFile(f); }}
+              onClick={() => document.getElementById("file-input")?.click()}
+            >
+              <input id="file-input" type="file" accept=".keykeep,.json" onChange={(e) => setFile(e.target.files?.[0] || null)} className="hidden" />
+              <svg className="w-8 h-8 mx-auto mb-2 text-[var(--on-surface-variant)] opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
+              </svg>
+              {file ? (
+                <p className="text-sm font-medium text-[var(--primary)]">{file.name}</p>
+              ) : (
+                <>
+                  <p className="text-sm font-medium">点击或拖拽上传 .keykeep 文件</p>
+                  <p className="text-xs text-[var(--on-surface-variant)] mt-1">支持 .keykeep 和 .json 格式</p>
+                </>
+              )}
+            </div>
+
+            <div>
+              <label className="text-sm font-medium mb-1.5 block">解密密钥</label>
+              <input
+                type="password"
+                value={passphrase}
+                onChange={(e) => setPassphrase(e.target.value)}
+                placeholder="输入导出时设置的密钥"
+                onKeyDown={(e) => e.key === "Enter" && file && passphrase && onImport(file, passphrase)}
+                className="w-full px-3.5 py-2.5 text-sm rounded-lg bg-[var(--surface-variant)] border border-[var(--outline)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)] focus:border-transparent transition"
+              />
+            </div>
+
+            {error && (
+              <div className="flex items-center gap-2 p-3 rounded-lg bg-[var(--error-subtle)] text-[var(--error)] text-sm">
+                <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" /></svg>
+                {error}
+              </div>
+            )}
+
+            <button
+              onClick={() => file && passphrase && onImport(file, passphrase)}
+              disabled={!file || !passphrase}
+              className="w-full py-2.5 rounded-lg bg-[var(--primary)] text-white text-sm font-medium disabled:opacity-40 hover:bg-[var(--primary-hover)] transition shadow-sm"
+            >
+              解密并导入
+            </button>
+          </div>
+        )}
 
         <div className="text-center mt-5">
           <button onClick={() => setDarkMode(!darkMode)} className="text-xs text-[var(--on-surface-variant)] hover:text-[var(--on-surface)] transition">

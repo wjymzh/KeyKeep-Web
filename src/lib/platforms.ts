@@ -5,6 +5,7 @@ import {
   FaSteam, FaSpotify, FaTelegram, FaWeixin, FaAlipay, FaBilibili,
   FaWeibo, FaTiktok, FaLinkedin, FaReddit, FaYoutube, FaTwitch,
   FaDropbox, FaDocker, FaGitlab, FaWordpress, FaPaypal, FaAmazon, FaMeta,
+  FaQq,
 } from "react-icons/fa6";
 import {
   SiNetflix, SiNotion,
@@ -14,6 +15,10 @@ import {
 } from "react-icons/hi2";
 import {
   LuBrain, LuBot, LuPaintbrush, LuDatabase, LuKeyRound, LuLandmark,
+  LuSearch, LuCloud, LuMail, LuShoppingCart, LuShoppingBag,
+  LuMessageCircle, LuBookOpen, LuSmartphone, LuMonitor,
+  LuMessageSquare, LuMusic, LuUtensils, LuStore, LuPlane,
+  LuCode, LuFileText, LuHeart, LuVideo,
 } from "react-icons/lu";
 
 export interface PlatformInfo {
@@ -41,11 +46,34 @@ export const platformPresets: PlatformInfo[] = [
   { id: "netflix", name: "Netflix", color: "#E50914", url: "https://www.netflix.com/login", icon: SiNetflix },
   { id: "spotify", name: "Spotify", color: "#1DB954", url: "https://accounts.spotify.com/login", icon: FaSpotify },
   { id: "telegram", name: "Telegram", color: "#26A5E4", url: "https://web.telegram.org", icon: FaTelegram },
+  // 国内平台
   { id: "wechat", name: "微信", color: "#07C160", url: "https://weixin.qq.com", icon: FaWeixin },
+  { id: "qq", name: "QQ", color: "#12B7F5", url: "https://i.qq.com", icon: FaQq },
   { id: "alipay", name: "支付宝", color: "#1677FF", url: "https://www.alipay.com", icon: FaAlipay },
+  { id: "taobao", name: "淘宝", color: "#FF5000", url: "https://www.taobao.com", icon: LuShoppingCart },
   { id: "bilibili", name: "Bilibili", color: "#00A1D6", url: "https://www.bilibili.com", icon: FaBilibili },
   { id: "weibo", name: "微博", color: "#E6162D", url: "https://weibo.com", icon: FaWeibo },
   { id: "tiktok", name: "抖音/TikTok", color: "#000000", url: "https://www.tiktok.com", icon: FaTiktok },
+  { id: "baidu", name: "百度", color: "#2932E1", url: "https://passport.baidu.com", icon: LuSearch },
+  { id: "aliyun", name: "阿里云", color: "#FF6A00", url: "https://account.aliyun.com", icon: LuCloud },
+  { id: "tencentcloud", name: "腾讯云", color: "#006EFF", url: "https://cloud.tencent.com", icon: LuCloud },
+  { id: "netease", name: "网易", color: "#D43C33", url: "https://login.netease.com", icon: LuMail },
+  { id: "netease163", name: "网易邮箱", color: "#00BE6E", url: "https://mail.163.com", icon: HiAtSymbol },
+  { id: "jd", name: "京东", color: "#E2231A", url: "https://passport.jd.com", icon: LuShoppingBag },
+  { id: "zhihu", name: "知乎", color: "#0066FF", url: "https://www.zhihu.com", icon: LuMessageCircle },
+  { id: "douban", name: "豆瓣", color: "#007722", url: "https://www.douban.com", icon: LuBookOpen },
+  { id: "xiaomi", name: "小米", color: "#FF6900", url: "https://account.xiaomi.com", icon: LuSmartphone },
+  { id: "huawei", name: "华为", color: "#CF0A2C", url: "https://id.huawei.com", icon: LuMonitor },
+  { id: "dingtalk", name: "钉钉", color: "#0089FF", url: "https://login.dingtalk.com", icon: LuMessageSquare },
+  { id: "douyin", name: "抖音", color: "#161823", url: "https://www.douyin.com", icon: LuMusic },
+  { id: "meituan", name: "美团", color: "#FFD100", url: "https://www.meituan.com", icon: LuUtensils },
+  { id: "pinduoduo", name: "拼多多", color: "#E02E24", url: "https://www.pinduoduo.com", icon: LuStore },
+  { id: "ctrip", name: "携程", color: "#003580", url: "https://passport.ctrip.com", icon: LuPlane },
+  { id: "gitee", name: "Gitee", color: "#C71D23", url: "https://gitee.com/login", icon: LuCode },
+  { id: "csdn", name: "CSDN", color: "#FC5531", url: "https://passport.csdn.net", icon: LuFileText },
+  { id: "xiaohongshu", name: "小红书", color: "#FF2442", url: "https://www.xiaohongshu.com", icon: LuHeart },
+  { id: "kuaishou", name: "快手", color: "#FF4906", url: "https://www.kuaishou.com", icon: LuVideo },
+  // 国际平台
   { id: "linkedin", name: "LinkedIn", color: "#0A66C2", url: "https://www.linkedin.com/login", icon: FaLinkedin },
   { id: "reddit", name: "Reddit", color: "#FF4500", url: "https://www.reddit.com/login", icon: FaReddit },
   { id: "youtube", name: "YouTube", color: "#FF0000", url: "https://www.youtube.com", icon: FaYoutube },
