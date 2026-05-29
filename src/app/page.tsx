@@ -373,7 +373,7 @@ function UnlockScreen({ passphrase, setPassphrase, error, onImport, onCloudLogin
                 {registeredKey}
               </p>
             </div>
-            <div className="flex items-start gap-2 p-3 rounded-lg bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-300 text-xs">
+            <div className="flex items-start gap-2 p-3 rounded-lg bg-[var(--error-subtle)] text-[var(--error)] text-xs">
               <svg className="w-4 h-4 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
               </svg>
@@ -764,7 +764,7 @@ function EditForm({ credential, allCredentials, onSave, onCancel }: {
   const update = (field: keyof Credential, value: string | number) => setForm((p) => ({ ...p, [field]: value, updatedAt: Date.now() }));
 
   const selectPlatform = (preset: typeof platformPresets[number]) => {
-    setForm((p) => ({ ...p, platform: preset.name, platformIcon: preset.id, websiteUrl: p.websiteUrl || preset.url, updatedAt: Date.now() }));
+    setForm((p) => ({ ...p, platform: preset.name, platformIcon: preset.id, websiteUrl: preset.url || p.websiteUrl, updatedAt: Date.now() }));
     setShowPlatformPicker(false);
   };
 
