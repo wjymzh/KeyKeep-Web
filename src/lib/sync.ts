@@ -1,5 +1,11 @@
 /**
  * KeyKeep Sync Client — communicates with the Cloudflare Worker backend.
+ *
+ * Security model:
+ *   - Master password is used only during login/register, then immediately discarded
+ *   - The derived CryptoKey (extractable: false) is stored in IndexedDB
+ *   - Even XSS cannot export the raw key bytes from a non-extractable CryptoKey
+ *   - JWT token and account metadata are stored in localStorage
  */
 
 import type { Credential } from './crypto';
@@ -11,6 +17,12 @@ import {
   encryptVault,
   decryptVault,
 } from './key-derivation';
+import {
+  storeEncryptionKey,
+  loadEncryptionKey,
+  clearEncryptionKey,
+  hasEncryptionKey,
+} from './key-store';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'https://keykeep-api.octopus-labs.top';
 
@@ -31,13 +43,12 @@ class SyncClient {
     loggedIn: false, email: '', token: '', userId: '',
     salt: '', secretKey: '', vaultVersion: 0,
   };
-  private masterPassword = '';
+  private cachedKey: CryptoKey | null = null;
   private listeners = new Set<Listener>();
 
   constructor() {
     if (typeof window !== 'undefined') {
       this.loadFromStorage();
-      this.masterPassword = sessionStorage.getItem('keykeep_mp') || '';
     }
   }
 
@@ -45,7 +56,12 @@ class SyncClient {
   isLoggedIn(): boolean { return this.state.loggedIn; }
   getEmail(): string { return this.state.email; }
   getSecretKey(): string { return this.state.secretKey; }
-  hasMasterPassword(): boolean { return !!this.masterPassword; }
+
+  async isReady(): Promise<boolean> {
+    if (!this.state.loggedIn) return false;
+    if (this.cachedKey) return true;
+    return hasEncryptionKey();
+  }
 
   subscribe(fn: Listener): () => void {
     this.listeners.add(fn);
@@ -69,6 +85,16 @@ class SyncClient {
     } catch { /* ignore */ }
   }
 
+  private async getEncKey(): Promise<CryptoKey> {
+    if (this.cachedKey) return this.cachedKey;
+
+    const key = await loadEncryptionKey();
+    if (!key) throw new Error('加密密钥不可用，请重新登录');
+
+    this.cachedKey = key;
+    return key;
+  }
+
   private async request<T>(path: string, options: RequestInit = {}): Promise<T> {
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
@@ -90,7 +116,10 @@ class SyncClient {
       { method: 'POST', body: JSON.stringify({ email, salt, verifier }) }
     );
 
-    this.setMasterPassword(masterPassword);
+    const encKey = await deriveEncryptionKey(masterPassword, secretKey, salt, email);
+    await storeEncryptionKey(encKey);
+    this.cachedKey = encKey;
+
     this.state = {
       loggedIn: true,
       email: res.user.email,
@@ -118,7 +147,10 @@ class SyncClient {
       { method: 'POST', body: JSON.stringify({ email, verifier }) }
     );
 
-    this.setMasterPassword(masterPassword);
+    const encKey = await deriveEncryptionKey(masterPassword, secretKey, saltRes.salt, email);
+    await storeEncryptionKey(encKey);
+    this.cachedKey = encKey;
+
     this.state = {
       loggedIn: true,
       email: loginRes.user.email,
@@ -138,29 +170,19 @@ class SyncClient {
         await this.request('/api/auth/logout', { method: 'POST' });
       }
     } catch { /* ignore */ }
-    this.setMasterPassword('');
+
+    this.cachedKey = null;
+    await clearEncryptionKey();
+
     this.state = { loggedIn: false, email: '', token: '', userId: '', salt: '', secretKey: '', vaultVersion: 0 };
     localStorage.removeItem('keykeep_sync');
     this.notify();
   }
 
-  setMasterPassword(mp: string) {
-    this.masterPassword = mp;
-    if (typeof window !== 'undefined') {
-      if (mp) sessionStorage.setItem('keykeep_mp', mp);
-      else sessionStorage.removeItem('keykeep_mp');
-    }
-  }
-
   async pushVault(credentials: Credential[]): Promise<void> {
-    if (!this.state.loggedIn || !this.masterPassword) {
-      throw new Error('请先登录并解锁');
-    }
+    if (!this.state.loggedIn) throw new Error('请先登录');
 
-    const encKey = await deriveEncryptionKey(
-      this.masterPassword, this.state.secretKey, this.state.salt, this.state.email
-    );
-
+    const encKey = await this.getEncKey();
     const json = JSON.stringify(credentials);
     const { encrypted_data, iv } = await encryptVault(json, encKey);
 
@@ -182,9 +204,9 @@ class SyncClient {
   }
 
   async pullVault(): Promise<Credential[] | null> {
-    if (!this.state.loggedIn || !this.masterPassword) {
-      throw new Error('请先登录并解锁');
-    }
+    if (!this.state.loggedIn) throw new Error('请先登录');
+
+    const encKey = await this.getEncKey();
 
     let vaultData: { vault: { encrypted_data: string; iv: string; version: number } };
     try {
@@ -193,10 +215,6 @@ class SyncClient {
       if (e instanceof Error && e.message.includes('保险库尚未创建')) return null;
       throw e;
     }
-
-    const encKey = await deriveEncryptionKey(
-      this.masterPassword, this.state.secretKey, this.state.salt, this.state.email
-    );
 
     const json = await decryptVault(
       vaultData.vault.encrypted_data,

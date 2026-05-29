@@ -30,18 +30,20 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    if (syncClient.isLoggedIn() && syncClient.hasMasterPassword()) {
-      setAuthed(true);
-      if (store.getAll().length === 0) {
-        syncClient.pullVault().then((data) => {
-          if (data) store.setAll(data);
-        }).catch(() => {}).finally(() => setInitializing(false));
+    syncClient.isReady().then((ready) => {
+      if (ready) {
+        setAuthed(true);
+        if (store.getAll().length === 0) {
+          syncClient.pullVault().then((data) => {
+            if (data) store.setAll(data);
+          }).catch(() => {}).finally(() => setInitializing(false));
+        } else {
+          setInitializing(false);
+        }
       } else {
         setInitializing(false);
       }
-    } else {
-      setInitializing(false);
-    }
+    });
   }, []);
 
   useEffect(() => {
