@@ -37,6 +37,7 @@ class SyncClient {
   constructor() {
     if (typeof window !== 'undefined') {
       this.loadFromStorage();
+      this.masterPassword = sessionStorage.getItem('keykeep_mp') || '';
     }
   }
 
@@ -55,9 +56,7 @@ class SyncClient {
 
   private saveToStorage() {
     if (typeof window === 'undefined') return;
-    const { token, ...rest } = this.state;
-    localStorage.setItem('keykeep_sync', JSON.stringify(rest));
-    sessionStorage.setItem('keykeep_token', token);
+    localStorage.setItem('keykeep_sync', JSON.stringify(this.state));
   }
 
   private loadFromStorage() {
@@ -65,8 +64,7 @@ class SyncClient {
       const stored = localStorage.getItem('keykeep_sync');
       if (stored) {
         const data = JSON.parse(stored);
-        const token = sessionStorage.getItem('keykeep_token') || '';
-        this.state = { ...data, token, loggedIn: !!data.userId && !!token };
+        this.state = { ...data, loggedIn: !!data.userId && !!data.token };
       }
     } catch { /* ignore */ }
   }
@@ -92,7 +90,7 @@ class SyncClient {
       { method: 'POST', body: JSON.stringify({ email, salt, verifier }) }
     );
 
-    this.masterPassword = masterPassword;
+    this.setMasterPassword(masterPassword);
     this.state = {
       loggedIn: true,
       email: res.user.email,
@@ -120,7 +118,7 @@ class SyncClient {
       { method: 'POST', body: JSON.stringify({ email, verifier }) }
     );
 
-    this.masterPassword = masterPassword;
+    this.setMasterPassword(masterPassword);
     this.state = {
       loggedIn: true,
       email: loginRes.user.email,
@@ -140,15 +138,18 @@ class SyncClient {
         await this.request('/api/auth/logout', { method: 'POST' });
       }
     } catch { /* ignore */ }
-    this.masterPassword = '';
+    this.setMasterPassword('');
     this.state = { loggedIn: false, email: '', token: '', userId: '', salt: '', secretKey: '', vaultVersion: 0 };
     localStorage.removeItem('keykeep_sync');
-    sessionStorage.removeItem('keykeep_token');
     this.notify();
   }
 
   setMasterPassword(mp: string) {
     this.masterPassword = mp;
+    if (typeof window !== 'undefined') {
+      if (mp) sessionStorage.setItem('keykeep_mp', mp);
+      else sessionStorage.removeItem('keykeep_mp');
+    }
   }
 
   async pushVault(credentials: Credential[]): Promise<void> {
